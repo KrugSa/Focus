@@ -1,0 +1,62 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* GitHub Dark Theme Palette */
+    --background: 220 20% 7%; /* #0d1117 */
+    --foreground: 210 15% 90%; /* #c9d1d9 */
+    --card: 220 18% 11%; /* #161b22 */
+    --card-foreground: 210 15% 90%;
+    --popover: 220 18% 11%;
+    --popover-foreground: 210 15% 90%;
+    --primary: 212 100% 67%; /* #58a6ff - GitHub Blue */
+    --primary-foreground: 210 15% 90%;
+    --secondary: 215 15% 18%; /* #30363d */
+    --secondary-foreground: 210 15% 90%;
+    --muted: 215 15% 18%;
+    --muted-foreground: 215 10% 60%;
+    --accent: 40 85% 48%; /* #d29922 - GitHub Orange */
+    --accent-foreground: 210 15% 90%;
+    --destructive: 3 85% 64%; /* #f85149 - GitHub Red */
+    --destructive-foreground: 210 15% 90%;
+    --border: 215 15% 18%;
+    --input: 215 15% 18%;
+    --ring: 212 100% 67%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-body;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-headline font-semibold tracking-tight;
+  }
+}
+
+/* Animations for the glow effects */
+@keyframes glow-blue {
+  0%, 100% { box-shadow: 0 0 5px rgba(88, 166, 255, 0.2); }
+  50% { box-shadow: 0 0 20px rgba(88, 166, 255, 0.4); }
+}
+
+@keyframes glow-orange {
+  0%, 100% { box-shadow: 0 0 5px rgba(210, 153, 34, 0.2); }
+  50% { box-shadow: 0 0 20px rgba(210, 153, 34, 0.4); }
+}
+
+@keyframes glow-red {
+  0%, 100% { box-shadow: 0 0 5px rgba(248, 81, 73, 0.2); }
+  50% { box-shadow: 0 0 20px rgba(248, 81, 73, 0.4); }
+}
+
+.glow-selected-primary { animation: glow-blue 2s infinite ease-in-out; }
+.glow-selected-accent { animation: glow-orange 2s infinite ease-in-out; }
+.glow-selected-destructive { animation: glow-red 2s infinite ease-in-out; }

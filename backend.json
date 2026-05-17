@@ -1,0 +1,62 @@
+
+{
+  "entities": {
+    "Project": {
+      "title": "Project",
+      "description": "Un proyecto que agrupa múltiples tareas.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "color": { "type": "string", "description": "Código de color hexadecimal para la UI." }
+      },
+      "required": ["name"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Un ticket o tarea de trabajo, con soporte para sincronización con Jira.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "projectId": { "type": "string" },
+        "ticketNumber": { "type": "string", "description": "Número de ticket manual o de Jira." },
+        "priority": { "type": "string", "enum": ["Urgent", "High", "Medium", "Low"] },
+        "status": { "type": "string", "enum": ["Todo", "In Progress", "Done", "Blocked"] },
+        "estimatedHours": { "type": "number" },
+        "actualHoursSpent": { "type": "number" },
+        "dueDate": { "type": "string", "format": "date" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "jiraId": { "type": "string", "description": "ID único de Jira para la vinculación externa." }
+      },
+      "required": ["title", "status"]
+    },
+    "TimeLog": {
+      "title": "Time Log",
+      "description": "Registro de duración de trabajo para una tarea específica.",
+      "type": "object",
+      "properties": {
+        "taskId": { "type": "string" },
+        "durationMinutes": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "note": { "type": "string" }
+      },
+      "required": ["taskId", "durationMinutes"]
+    }
+  },
+  "auth": {
+    "providers": ["google.com"]
+  },
+  "firestore": {
+    "/projects/{projectId}": {
+      "schema": { "$ref": "#/backend/entities/Project" },
+      "description": "Colección de proyectos del usuario."
+    },
+    "/tasks/{taskId}": {
+      "schema": { "$ref": "#/backend/entities/Task" },
+      "description": "Colección de todas las tareas y tickets."
+    },
+    "/timeLogs/{logId}": {
+      "schema": { "$ref": "#/backend/entities/TimeLog" },
+      "description": "Historial de tiempo registrado."
+    }
+  }
+}
