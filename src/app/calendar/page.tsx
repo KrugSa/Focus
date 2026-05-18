@@ -3,13 +3,14 @@
 import * as React from "react"
 import { Calendar } from "@/components/ui/calendar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { MOCK_TASKS } from "@/lib/mock-data"
+import { useJiraTasks } from "@/hooks/use-jira-tasks"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Brain } from "lucide-react"
 
 export default function CalendarPage() {
   const [date, setDate] = React.useState<Date | undefined>(new Date())
+  const { tasks } = useJiraTasks()
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
@@ -40,7 +41,7 @@ export default function CalendarPage() {
               <CardTitle className="text-base">Upcoming Deadlines</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {MOCK_TASKS.map((task) => (
+              {tasks.map((task) => (
                 <div key={task.id} className="flex items-center justify-between p-4 rounded-xl border border-border/50 bg-secondary/10 group hover:border-primary/50 transition-all">
                   <div className="flex items-center gap-4">
                     <div className="w-10 h-10 rounded-lg bg-secondary/50 flex flex-col items-center justify-center border border-border/50">

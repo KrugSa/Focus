@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { MOCK_TASKS } from "@/lib/mock-data"
+import { useJiraTasks } from "@/hooks/use-jira-tasks"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Brain, Plus, Check } from "lucide-react"
@@ -38,6 +38,7 @@ const STATIC_SCHEDULE = {
 }
 
 export default function PlannerPage() {
+  const { tasks } = useJiraTasks()
   const [schedule, setSchedule] = React.useState<any>(null)
   const [loading, setLoading] = React.useState(true)
 
@@ -107,7 +108,7 @@ export default function PlannerPage() {
           <div className="p-4 rounded-xl border border-dashed border-border/50 bg-secondary/5">
              <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">Unscheduled Pool</h4>
              <div className="space-y-2">
-                {MOCK_TASKS.slice(3).map(task => (
+                {tasks.slice(3).map(task => (
                   <div key={task.id} className="p-2.5 rounded-lg border border-border/50 bg-card/40 flex items-center justify-between group cursor-grab active:cursor-grabbing">
                     <span className="text-[11px] font-medium truncate pr-4">{task.title}</span>
                     <Button variant="ghost" size="icon" className="h-5 w-5 rounded-full opacity-0 group-hover:opacity-100"><Plus className="w-3 h-3"/></Button>

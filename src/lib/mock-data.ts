@@ -1,6 +1,22 @@
 
 import { addDays, subDays, format } from 'date-fns';
 
+export interface Stats {
+  completedTasks: number;
+  totalTasks: number;
+  focusHours: number;
+  productivityScore: number;
+  urgentCount: number;
+}
+
+export const MOCK_STATS: Stats = {
+  completedTasks: 1,
+  totalTasks: 4,
+  focusHours: 5.5,
+  productivityScore: 87,
+  urgentCount: 2,
+};
+
 export type Priority = 'Urgent' | 'High' | 'Medium' | 'Low';
 export type Status = 'Todo' | 'In Progress' | 'Done' | 'Blocked';
 

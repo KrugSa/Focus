@@ -15,7 +15,6 @@ import {
   PieChart,
   Pie
 } from "recharts"
-import { MOCK_STATS } from "@/lib/mock-data"
 import { Badge } from "@/components/ui/badge"
 
 const dataVelocity = [

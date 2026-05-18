@@ -1,35 +1,43 @@
 "use client"
 
 import { Card } from "@/components/ui/card"
-import { MOCK_STATS } from "@/lib/mock-data"
-import { CheckCircle2, Clock, Zap, Target, AlertCircle } from "lucide-react"
+import { CheckCircle2, Clock, Target, AlertCircle } from "lucide-react"
+import { useJiraTasks } from "@/hooks/use-jira-tasks"
 
 export function StatsGrid() {
+  const { tasks, loading } = useJiraTasks()
+
+  const completedTasks = tasks.filter(t => t.status === 'Done').length
+  const totalTasks = tasks.length
+  const focusHours = Math.round(tasks.reduce((sum, t) => sum + (t.actualHoursSpent ?? 0), 0) * 10) / 10
+  const urgentCount = tasks.filter(t => t.priority === 'Urgent' && t.status !== 'Done').length
+  const productivityScore = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
+
   const stats = [
     {
       title: "Today's Progress",
-      value: `${MOCK_STATS.completedTasks}/${MOCK_STATS.totalTasks}`,
+      value: loading ? '…' : `${completedTasks}/${totalTasks}`,
       sub: "tasks completed",
       icon: CheckCircle2,
       color: "text-green-400"
     },
     {
       title: "Focus Hours",
-      value: `${MOCK_STATS.focusHours}h`,
+      value: loading ? '…' : `${focusHours}h`,
       sub: "tracked today",
       icon: Clock,
       color: "text-primary"
     },
     {
       title: "Productivity Score",
-      value: `${MOCK_STATS.productivityScore}%`,
-      sub: "+5% from yesterday",
+      value: loading ? '…' : `${productivityScore}%`,
+      sub: "based on completed tasks",
       icon: Target,
       color: "text-accent"
     },
     {
       title: "Urgent Issues",
-      value: "2",
+      value: loading ? '…' : String(urgentCount),
       sub: "require attention",
       icon: AlertCircle,
       color: "text-destructive"

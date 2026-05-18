@@ -2,327 +2,307 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { 
-  Play, 
-  Pause, 
-  RotateCcw, 
-  Clock, 
-  AlertTriangle, 
-  CheckCircle2, 
-  Plus, 
-  Bug, 
-  Users, 
-  ClipboardList,
-  History,
-  Layout,
-  Database
-} from "lucide-react"
-import { MOCK_TASKS, Task } from "@/lib/mock-data"
-import { Progress } from "@/components/ui/progress"
-import { cn } from "@/lib/utils"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { isTomorrow, isBefore, startOfDay, parseISO } from "date-fns"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  Play, Pause, RotateCcw, Clock, AlertTriangle,
+  CheckCircle2, ArrowUpCircle, Circle, XCircle, ExternalLink,
+  PlusCircle, Plus, Bug, Users, ClipboardList, History, Layout, Pin
+} from "lucide-react"
+import { Priority, Status } from "@/lib/mock-data"
+import { useJiraTasks } from "@/hooks/use-jira-tasks"
+import { useTodayTickets, MAX_TODAY } from "@/hooks/use-today-tickets"
+import { Progress } from "@/components/ui/progress"
+import { cn } from "@/lib/utils"
+
+const DAILY_LIMIT = 8 * 3600
+
+type LogEntry = {
+  id: string
+  title: string
+  type: "bug" | "meeting" | "task"
+  durationMin: number
+  loggedAt: string
+}
+
+const LOG_KEY = "focus-quick-log"
+
+const priorityBadge: Record<Priority, string> = {
+  Urgent: "bg-destructive/20 text-destructive border-destructive/30",
+  High:   "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  Medium: "bg-primary/20 text-primary border-primary/30",
+  Low:    "bg-muted text-muted-foreground border-border",
+}
+
+const statusIcon: Record<Status, React.ReactNode> = {
+  "In Progress": <ArrowUpCircle className="w-3 h-3 text-primary" />,
+  "Todo":        <Circle className="w-3 h-3 text-muted-foreground" />,
+  "Blocked":     <XCircle className="w-3 h-3 text-destructive" />,
+  "Done":        <CheckCircle2 className="w-3 h-3 text-green-500" />,
+}
 
 export default function FocusDashboard() {
-  const [tasks, setTasks] = React.useState<Task[]>(MOCK_TASKS)
-  const [activeTicketId, setActiveTicketId] = React.useState<string>(MOCK_TASKS[0].id)
-  
-  const [isChronoRunning, setIsChronoRunning] = React.useState(false)
-  const [chronoSeconds, setChronoSeconds] = React.useState(0)
+  const { tasks: jiraTasks, loading } = useJiraTasks()
+  const { todayIds, removeToday, hydrated } = useTodayTickets()
+  const [activeTicketId, setActiveTicketId] = React.useState<string>("")
+  const [isRunning, setIsRunning] = React.useState(false)
+  const [chronoSec, setChronoSec] = React.useState(0)
+  const [dailySec, setDailySec] = React.useState(0)
 
-  const [dailySeconds, setDailySeconds] = React.useState(5.5 * 3600)
-  const DAILY_LIMIT = 8 * 3600
-
+  // Quick entry state
+  const [logs, setLogs] = React.useState<LogEntry[]>([])
   const [newTitle, setNewTitle] = React.useState("")
   const [newType, setNewType] = React.useState<"bug" | "meeting" | "task">("task")
   const [newDuration, setNewDuration] = React.useState("30")
 
-  const activeTask = tasks.find(t => t.id === activeTicketId) || tasks[0]
+  React.useEffect(() => {
+    try {
+      const stored = localStorage.getItem(LOG_KEY)
+      if (stored) setLogs(JSON.parse(stored))
+    } catch {}
+  }, [])
+
+  React.useEffect(() => {
+    if (!hydrated || todayIds.length === 0) return
+    setActiveTicketId(prev => prev && todayIds.includes(prev) ? prev : todayIds[0])
+  }, [hydrated, todayIds])
 
   React.useEffect(() => {
     let interval: NodeJS.Timeout
-    if (isChronoRunning) {
+    if (isRunning) {
       interval = setInterval(() => {
-        setChronoSeconds(prev => prev + 1)
-        setDailySeconds(prev => prev + 1)
-        
-        setTasks(prevTasks => prevTasks.map(t => 
-          t.id === activeTicketId 
-            ? { ...t, actualHoursSpent: (t.actualHoursSpent || 0) + (1/3600) }
-            : t
-        ))
+        setChronoSec(s => s + 1)
+        setDailySec(s => s + 1)
       }, 1000)
     }
     return () => clearInterval(interval)
-  }, [isChronoRunning, activeTicketId])
+  }, [isRunning])
 
-  const formatTime = (seconds: number) => {
-    const h = Math.floor(seconds / 3600)
-    const m = Math.floor((seconds % 3600) / 60)
-    const s = Math.floor(seconds % 60)
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+  const fmt = (sec: number) => {
+    const h = Math.floor(sec / 3600).toString().padStart(2, "0")
+    const m = Math.floor((sec % 3600) / 60).toString().padStart(2, "0")
+    const s = Math.floor(sec % 60).toString().padStart(2, "0")
+    return `${h}:${m}:${s}`
   }
 
-  const formatHours = (hours: number = 0) => {
-    if (hours < 1 && hours > 0) {
-      return Math.round(hours * 60) + "m"
-    }
-    return hours.toFixed(2) + "h"
-  }
-
-  const handleToggleComplete = (taskId: string) => {
-    setTasks(prev => prev.map(t => 
-      t.id === taskId ? { ...t, status: t.status === 'Done' ? 'Todo' : 'Done' } : t
-    ))
-  }
-
-  const handleAddTask = (e: React.FormEvent) => {
+  const handleAddLog = (e: React.FormEvent) => {
     e.preventDefault()
     if (!newTitle.trim()) return
-
-    const durationMinutes = parseInt(newDuration) || 0
-    const durationHours = durationMinutes / 60
-
-    const newTask: Task = {
-      id: Math.random().toString(36).substr(2, 9),
-      title: newTitle,
-      project: "Quick Entry",
-      priority: "High",
-      status: "Done",
-      estimatedHours: durationHours,
-      actualHoursSpent: durationHours,
-      tags: [newType],
-      ticketNumber: newType === 'bug' ? 'BUG-NEW' : newType === 'meeting' ? 'MTG-NEW' : 'DRAFT',
-      dueDate: new Date().toISOString().split('T')[0]
+    const entry: LogEntry = {
+      id: Math.random().toString(36).slice(2),
+      title: newTitle.trim(),
+      type: newType,
+      durationMin: parseInt(newDuration) || 0,
+      loggedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     }
-
-    setTasks([newTask, ...tasks])
-    setDailySeconds(prev => prev + (durationMinutes * 60))
+    const updated = [entry, ...logs]
+    setLogs(updated)
+    localStorage.setItem(LOG_KEY, JSON.stringify(updated))
+    setDailySec(s => s + entry.durationMin * 60)
     setNewTitle("")
     setNewDuration("30")
   }
 
-  const getTaskStatusInfo = (task: Task) => {
-    const actual = task.actualHoursSpent || 0
-    const estimated = task.estimatedHours || 0
-    const progress = (actual / estimated) * 100
-    
-    let timeColor = "bg-primary"
-    let statusBorderColor = "border-primary"
-    let statusBgColor = "bg-primary"
-    let glowClass = "glow-selected-primary"
-    let deadlineLabel = ""
-    
-    if (actual >= estimated) {
-      timeColor = actual > estimated ? "bg-accent" : "bg-green-500"
-    }
+  const totalLoggedMin = logs.reduce((acc, l) => acc + l.durationMin, 0)
 
-    if (task.dueDate) {
-      const due = startOfDay(parseISO(task.dueDate))
-      const today = startOfDay(new Date())
-      
-      if (isBefore(due, today)) {
-        statusBorderColor = "border-destructive"
-        statusBgColor = "bg-destructive"
-        glowClass = "glow-selected-destructive"
-        deadlineLabel = "Overdue"
-      } else if (isTomorrow(due)) {
-        statusBorderColor = "border-accent"
-        statusBgColor = "bg-accent"
-        glowClass = "glow-selected-accent"
-        deadlineLabel = "Due Tomorrow"
-      }
-    }
-
-    return { progress, timeColor, statusBorderColor, statusBgColor, glowClass, deadlineLabel }
-  }
-
-  const activeTickets = tasks.filter(t => t.status !== 'Done')
-  const finishedTickets = tasks.filter(t => t.status === 'Done')
-  const dailyProgress = (dailySeconds / DAILY_LIMIT) * 100
-  const isOverLimit = dailySeconds >= DAILY_LIMIT
+  const todayTasks = jiraTasks.filter(t => todayIds.includes(t.id))
+  const activeTask = todayTasks.find(t => t.id === activeTicketId)
+  const dailyPct = Math.min((dailySec / DAILY_LIMIT) * 100, 100)
+  const isOver = dailySec >= DAILY_LIMIT
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pt-12 px-4 pb-20">
-      <header className="mb-8 text-center flex flex-col items-center gap-2">
-        <h1 className="text-4xl font-headline font-bold tracking-tight text-foreground">Veloce Focus</h1>
-        <p className="text-muted-foreground">GitHub Dark Aesthetic • Simplified Performance</p>
-        <Badge variant="outline" className="gap-1 bg-secondary/30 border-border">
-          <Database className="w-3 h-3" /> Firestore Integrated
-        </Badge>
-      </header>
+    <div className="space-y-6">
+      {/* Hero section: capacity (left) + timer (right) */}
+      <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4 items-stretch">
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="border-primary/20 bg-primary/5">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-semibold uppercase text-primary tracking-widest flex items-center gap-2">
-              <Clock className="w-4 h-4" />
-              Active Session
+        {/* Daily capacity — compact left card */}
+        <Card className={cn(
+          "border-border/50 bg-card flex flex-col justify-between",
+          isOver && "border-destructive/40 bg-destructive/5"
+        )}>
+          <CardHeader className="pb-1 pt-4 px-4">
+            <CardTitle className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center justify-between">
+              Capacidad Diaria
+              {isOver && <AlertTriangle className="w-3 h-3 text-destructive" />}
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="text-center py-4">
-              <span className="text-[10px] text-muted-foreground font-mono block mb-1">
-                {activeTask.ticketNumber || 'INTERNAL'}
-              </span>
-              <h3 className="text-sm font-bold mb-4 line-clamp-1">{activeTask.title}</h3>
-              <div className="text-5xl font-headline font-bold tabular-nums tracking-tighter">
-                {formatTime(chronoSeconds)}
-              </div>
+          <CardContent className="px-4 pb-4 space-y-3 flex-1 flex flex-col justify-end">
+            <div>
+              <span className="font-headline text-3xl font-bold tabular-nums">{fmt(dailySec)}</span>
+              <p className="text-[10px] text-muted-foreground mt-0.5">/ 08:00:00</p>
             </div>
-            <div className="flex justify-center gap-2">
-              <Button 
-                size="lg" 
-                className={cn("w-32", isChronoRunning ? "bg-secondary text-foreground" : "bg-primary text-primary-foreground")}
-                onClick={() => setIsChronoRunning(!isChronoRunning)}
-              >
-                {isChronoRunning ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
-                {isChronoRunning ? "Pause" : "Start"}
-              </Button>
-              <Button variant="outline" size="icon" className="h-11 w-11 border-border bg-card" onClick={() => { setIsChronoRunning(false); setChronoSeconds(0); }}>
-                <RotateCcw className="h-4 w-4" />
-              </Button>
-            </div>
+            <Progress
+              value={dailyPct}
+              className={cn("h-2 bg-secondary", isOver ? "[&>div]:bg-destructive" : "[&>div]:bg-primary/70")}
+            />
+            <p className={cn("text-[10px] font-medium", isOver ? "text-destructive" : "text-muted-foreground")}>
+              {isOver
+                ? "⚠ Límite alcanzado — descansa."
+                : `${Math.max(0, Math.floor((DAILY_LIMIT - dailySec) / 3600))}h ${Math.floor(((DAILY_LIMIT - dailySec) % 3600) / 60)}m restantes`}
+            </p>
           </CardContent>
         </Card>
 
-        <Card className={cn("border-border bg-card", isOverLimit && "border-destructive/50 bg-destructive/5")}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-semibold uppercase text-muted-foreground tracking-widest flex items-center justify-between">
-              Daily Capacity
-              {isOverLimit && <AlertTriangle className="w-4 h-4 text-destructive" />}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="text-center py-4">
-              <div className="text-5xl font-headline font-bold tabular-nums tracking-tighter">
-                {formatTime(dailySeconds)}
-              </div>
-              <p className="text-[11px] text-muted-foreground mt-2">Limit: 08:00:00</p>
-            </div>
-            <div className="space-y-2">
-              <Progress value={dailyProgress} className={cn("h-2 bg-secondary", isOverLimit ? "indicator-destructive" : "indicator-primary")} />
-              {isOverLimit ? (
-                <p className="text-[11px] text-destructive font-semibold text-center mt-2 flex items-center justify-center gap-1">
-                  <AlertTriangle className="w-3 h-3" /> Health first. Time to rest.
-                </p>
+        {/* Big timer — main card */}
+        <Card className={cn(
+          "border-primary/20 bg-primary/5 transition-all",
+          isRunning && "border-primary/50 shadow-[0_0_40px_rgba(88,166,255,0.12)]"
+        )}>
+          <CardContent className="px-8 py-8 flex flex-col items-center gap-5">
+            {/* Active ticket info */}
+            <div className="text-center space-y-1">
+              <p className={cn(
+                "text-[10px] font-bold uppercase tracking-widest",
+                isRunning ? "text-primary" : "text-muted-foreground"
+              )}>
+                <Clock className="inline w-3 h-3 mr-1 -mt-0.5" />
+                {isRunning ? "Sesión activa" : "Sesión pausada"}
+              </p>
+              {activeTask ? (
+                <>
+                  <p className="font-mono text-xs text-muted-foreground">{activeTask.ticketNumber}</p>
+                  <p className="text-base font-semibold max-w-lg">{activeTask.title}</p>
+                </>
               ) : (
-                <p className="text-[11px] text-muted-foreground text-center mt-2">
-                  {Math.max(0, Math.floor((DAILY_LIMIT - dailySeconds) / 3600))}h remaining
-                </p>
+                <p className="text-sm text-muted-foreground">Selecciona un ticket abajo para comenzar</p>
               )}
             </div>
+
+            {/* Big clock */}
+            <span
+              className={cn(
+                "font-headline font-black tabular-nums tracking-tight leading-none transition-colors select-none",
+                isRunning ? "text-primary" : "text-foreground/80"
+              )}
+              style={{ fontSize: "clamp(4rem, 12vw, 8rem)" }}
+            >
+              {fmt(chronoSec)}
+            </span>
+
+            {/* Controls */}
+            <div className="flex items-center gap-3">
+              <Button
+                size="lg"
+                variant={isRunning ? "secondary" : "default"}
+                className="gap-2 px-8 h-11 text-sm font-semibold"
+                disabled={!activeTask}
+                onClick={() => setIsRunning(r => !r)}
+              >
+                {isRunning ? <><Pause className="w-4 h-4" /> Pausar</> : <><Play className="w-4 h-4" /> Iniciar</>}
+              </Button>
+              <Button
+                size="icon"
+                variant="outline"
+                className="h-11 w-11"
+                onClick={() => { setIsRunning(false); setChronoSec(0) }}
+              >
+                <RotateCcw className="w-4 h-4" />
+              </Button>
+            </div>
           </CardContent>
         </Card>
+
       </div>
 
+      {/* Tabs: Tickets del día / Quick Entry / Time Logs */}
       <Tabs defaultValue="focus" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 bg-card border border-border p-1 h-12">
-          <TabsTrigger value="focus" className="gap-2 data-[state=active]:bg-secondary">
-            <Layout className="w-4 h-4" /> Work
+        <TabsList className="grid w-full grid-cols-3 bg-card border border-border/50 p-1 h-11">
+          <TabsTrigger value="focus" className="gap-1.5 text-xs data-[state=active]:bg-secondary">
+            <Layout className="w-3.5 h-3.5" /> Tickets del Día
+            <Badge variant="secondary" className="ml-1 text-[9px] h-4 px-1">{todayIds.length}/{MAX_TODAY}</Badge>
           </TabsTrigger>
-          <TabsTrigger value="logs" className="gap-2 data-[state=active]:bg-secondary">
-            <History className="w-4 h-4" /> Time Logs
+          <TabsTrigger value="quick" className="gap-1.5 text-xs data-[state=active]:bg-secondary">
+            <Plus className="w-3.5 h-3.5" /> Entrada Rápida
           </TabsTrigger>
-          <TabsTrigger value="backlog" className="gap-2 data-[state=active]:bg-secondary">
-            <Plus className="w-4 h-4" /> Quick Entry
+          <TabsTrigger value="logs" className="gap-1.5 text-xs data-[state=active]:bg-secondary">
+            <History className="w-3.5 h-3.5" /> Registro
+            {logs.length > 0 && <Badge variant="outline" className="ml-1 text-[9px] h-4 px-1">{logs.length}</Badge>}
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="focus" className="space-y-6 pt-4">
-          <div className="space-y-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Active Priority</h3>
-            {activeTickets.length > 0 ? activeTickets.map((task) => {
-              const { progress, timeColor, statusBorderColor, statusBgColor, glowClass, deadlineLabel } = getTaskStatusInfo(task)
-              const isActive = activeTicketId === task.id
-              
-              return (
-                <div 
-                  key={task.id} 
-                  className={cn(
-                    "relative flex flex-col p-4 pl-6 rounded-lg border transition-all cursor-pointer group space-y-3 overflow-hidden",
-                    statusBorderColor,
-                    isActive 
-                      ? cn("bg-secondary/40 scale-[1.01]", glowClass) 
-                      : "bg-card hover:bg-secondary/20"
-                  )}
-                  onClick={() => {
-                    setActiveTicketId(task.id)
-                    setIsChronoRunning(false)
-                    setChronoSeconds(0)
-                  }}
-                >
-                  <div className={cn("absolute left-0 top-0 bottom-0 w-1.5", statusBgColor)} />
-                  
-                  <div className="flex items-center justify-between min-w-0">
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className="min-w-0">
-                        <span className="text-[10px] font-mono font-bold text-muted-foreground uppercase">
-                          {task.ticketNumber || 'INTERNAL'}
-                        </span>
-                        <h4 className="text-sm font-semibold truncate text-foreground">{task.title}</h4>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {deadlineLabel && (
-                        <Badge variant="outline" className={cn("text-[9px] h-5 px-1.5 border-current", deadlineLabel === 'Overdue' ? 'text-destructive' : 'text-accent')}>
-                          {deadlineLabel}
-                        </Badge>
-                      )}
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8 hover:bg-primary/20 hover:text-primary rounded-full"
-                        onClick={(e) => { e.stopPropagation(); handleToggleComplete(task.id); }}
-                      >
-                        <CheckCircle2 className="w-5 h-5" />
-                      </Button>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-                      <span>{formatHours(task.actualHoursSpent)} / {formatHours(task.estimatedHours)}</span>
-                      <span>{Math.round(progress)}%</span>
-                    </div>
-                    <Progress value={progress} className="h-1 bg-secondary" indicatorClassName={timeColor} />
-                  </div>
-                </div>
-              )
-            }) : (
-              <div className="p-8 text-center border border-dashed border-border rounded-xl bg-card">
-                <p className="text-sm text-muted-foreground">No active tasks. Time to focus!</p>
-              </div>
-            )}
+        {/* --- Tickets del Día --- */}
+        <TabsContent value="focus" className="pt-4 space-y-3">
+          <div className="flex items-center justify-end">
+            <Link href="/tickets">
+              <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs">
+                <PlusCircle className="w-3.5 h-3.5" />
+                Agregar tickets
+              </Button>
+            </Link>
           </div>
 
-          {finishedTickets.length > 0 && (
-            <div className="space-y-4 pt-4 border-t border-border">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Finished Today</h3>
-              {finishedTickets.map((task) => (
-                <div key={task.id} className="flex items-center justify-between p-3 rounded-lg border border-border bg-card/40 opacity-70">
-                  <div className="flex items-center gap-3">
-                    <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    <div>
-                      <span className="text-[10px] font-mono text-muted-foreground line-through">{task.ticketNumber}</span>
-                      <h4 className="text-sm font-medium line-through text-muted-foreground">{task.title}</h4>
-                    </div>
+          {!loading && todayIds.length === 0 && (
+            <div className="flex flex-col items-center justify-center gap-3 py-14 border border-dashed border-border/40 rounded-2xl text-center">
+              <span className="text-3xl">📋</span>
+              <p className="text-sm font-semibold">No hay tickets para hoy</p>
+              <p className="text-xs text-muted-foreground max-w-xs">
+                Ve a <strong>Tickets</strong> y usa el botón 📌 para agregar hasta {MAX_TODAY} tickets.
+              </p>
+              <Link href="/tickets">
+                <Button size="sm" className="mt-1 gap-1.5">
+                  <PlusCircle className="w-3.5 h-3.5" /> Ir a Tickets
+                </Button>
+              </Link>
+            </div>
+          )}
+
+          {loading && todayIds.length > 0 && (
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+              {todayIds.map(id => (
+                <div key={id} className="h-24 rounded-xl bg-card/40 border border-border/50 animate-pulse" />
+              ))}
+            </div>
+          )}
+
+          {!loading && todayTasks.length > 0 && (
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+              {todayTasks.map(task => (
+                <div
+                  key={task.id}
+                  onClick={() => { setActiveTicketId(task.id); setIsRunning(false); setChronoSec(0) }}
+                  className={cn(
+                    "group relative flex flex-col gap-2.5 p-4 rounded-xl border cursor-pointer transition-all hover:scale-[1.01]",
+                    activeTicketId === task.id
+                      ? "border-primary bg-primary/10 shadow-[0_0_16px_rgba(88,166,255,0.2)]"
+                      : "border-border/50 bg-card/60 hover:border-border hover:bg-card/80"
+                  )}
+                >
+                  {activeTicketId === task.id && (
+                    <span className="absolute top-2 left-2 w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                  )}
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="font-mono text-[9px] text-muted-foreground">{task.ticketNumber}</span>
+                    <span className={cn("text-[8px] px-1.5 py-0.5 rounded-full border font-semibold", priorityBadge[task.priority])}>
+                      {task.priority}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-[10px] font-mono text-muted-foreground">{formatHours(task.actualHoursSpent)}</span>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="text-[10px] hover:bg-secondary"
-                      onClick={() => handleToggleComplete(task.id)}
-                    >
-                      Restore
-                    </Button>
+                  <p className="text-[12px] font-semibold leading-snug line-clamp-2 flex-1">{task.title}</p>
+                  <div className="flex items-center justify-between pt-1 border-t border-border/20">
+                    <div className="flex items-center gap-1">
+                      {statusIcon[task.status]}
+                      <span className="text-[9px] text-muted-foreground">{task.status}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] text-muted-foreground">{task.project}</span>
+                      <button
+                        onClick={e => { e.stopPropagation(); removeToday(task.id) }}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive text-[9px]"
+                        title="Quitar del día"
+                      >✕</button>
+                      <a
+                        href={`https://payevo.atlassian.net/browse/${task.ticketNumber}`}
+                        target="_blank" rel="noreferrer"
+                        onClick={e => e.stopPropagation()}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <ExternalLink className="w-3 h-3 text-muted-foreground hover:text-primary" />
+                      </a>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -330,105 +310,109 @@ export default function FocusDashboard() {
           )}
         </TabsContent>
 
-        <TabsContent value="logs" className="pt-4">
-          <Card className="border-border bg-card shadow-sm">
-            <CardHeader className="pb-3">
+        {/* --- Quick Entry --- */}
+        <TabsContent value="quick" className="pt-4">
+          <Card className="border-border/50 bg-card max-w-lg">
+            <CardHeader className="pb-3 pt-5 px-5">
               <CardTitle className="text-sm font-bold flex items-center gap-2">
-                <History className="w-4 h-4 text-primary" /> Work History Breakdown
+                <Plus className="w-4 h-4 text-primary" /> Registrar Interrupción
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-0">
-              <div className="divide-y divide-border">
-                {tasks.filter(t => (t.actualHoursSpent || 0) > 0).map(task => (
-                  <div key={task.id} className="flex items-center justify-between p-4 hover:bg-secondary/10">
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-mono text-muted-foreground uppercase">{task.ticketNumber}</p>
-                      <p className="text-sm font-medium truncate">{task.title}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs font-bold text-primary">{formatHours(task.actualHoursSpent)}</p>
-                      <p className="text-[10px] text-muted-foreground uppercase">Logged</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="backlog" className="pt-4 space-y-6">
-          <Card className="border-border bg-card">
-            <CardHeader>
-              <CardTitle className="text-sm font-bold flex items-center gap-2">
-                 <Plus className="w-4 h-4 text-primary" /> Log Unexpected Task
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleAddTask} className="space-y-6">
-                <div className="space-y-2">
-                  <Label className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Description</Label>
-                  <Input 
-                    placeholder="Unexpected bug or meeting..." 
+            <CardContent className="px-5 pb-5">
+              <form onSubmit={handleAddLog} className="space-y-5">
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">Descripción</Label>
+                  <Input
+                    placeholder="Bug inesperado, reunión, tarea extra…"
                     value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    className="bg-secondary/20 border-border focus:ring-primary"
+                    onChange={e => setNewTitle(e.target.value)}
+                    className="bg-secondary/20 border-border h-10"
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Type</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">Tipo</Label>
                   <div className="flex gap-2">
-                    {[
-                      { id: 'bug', icon: Bug, label: 'Bug' },
-                      { id: 'meeting', icon: Users, label: 'Meeting' },
-                      { id: 'task', icon: ClipboardList, label: 'Other' }
-                    ].map(type => (
-                      <Button 
-                        key={type.id}
-                        type="button" 
-                        variant={newType === type.id ? 'default' : 'outline'}
-                        className={cn("flex-1 gap-2 text-xs h-9 border-border", newType === type.id && "bg-primary text-primary-foreground")}
-                        onClick={() => setNewType(type.id as any)}
+                    {([
+                      { id: "bug",     Icon: Bug,          label: "Bug" },
+                      { id: "meeting", Icon: Users,        label: "Reunión" },
+                      { id: "task",    Icon: ClipboardList, label: "Otro" },
+                    ] as const).map(({ id, Icon, label }) => (
+                      <Button
+                        key={id} type="button"
+                        variant={newType === id ? "default" : "outline"}
+                        className={cn("flex-1 gap-1.5 text-xs h-9 border-border", newType === id && "bg-primary text-primary-foreground")}
+                        onClick={() => setNewType(id)}
                       >
-                        <type.icon className="w-3 h-3" /> {type.label}
+                        <Icon className="w-3 h-3" /> {label}
                       </Button>
                     ))}
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Duration (Minutes)</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">Duración (minutos)</Label>
                   <div className="flex gap-2">
-                    <Input 
-                      type="number"
-                      placeholder="30"
+                    <Input
+                      type="number" placeholder="30"
                       value={newDuration}
-                      onChange={(e) => setNewDuration(e.target.value)}
-                      className="w-24 bg-secondary/20 border-border"
+                      onChange={e => setNewDuration(e.target.value)}
+                      className="w-20 bg-secondary/20 border-border h-9"
                     />
                     <div className="flex flex-1 gap-1">
                       {["5", "15", "30", "60"].map(min => (
-                        <Button 
-                          key={min}
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          className={cn("flex-1 text-[10px] border border-border bg-card", newDuration === min && "bg-primary text-primary-foreground border-primary")}
+                        <Button
+                          key={min} type="button" variant="secondary" size="sm"
+                          className={cn("flex-1 text-[10px] border border-border bg-card h-9", newDuration === min && "bg-primary text-primary-foreground border-primary")}
                           onClick={() => setNewDuration(min)}
-                        >
-                          {min}m
-                        </Button>
+                        >{min}m</Button>
                       ))}
                     </div>
                   </div>
                 </div>
 
-                <Button type="submit" className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-bold h-11">
-                  Save to Time Logs
+                <Button type="submit" className="w-full h-10 font-semibold">
+                  Guardar en registro
                 </Button>
               </form>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* --- Time Logs --- */}
+        <TabsContent value="logs" className="pt-4">
+          {logs.length === 0 ? (
+            <div className="py-14 text-center border border-dashed border-border/40 rounded-2xl">
+              <p className="text-sm text-muted-foreground">Aún no hay registros de hoy.</p>
+            </div>
+          ) : (
+            <Card className="border-border/50 bg-card">
+              <CardHeader className="pb-2 pt-4 px-5 flex flex-row items-center justify-between">
+                <CardTitle className="text-sm font-bold flex items-center gap-2">
+                  <History className="w-4 h-4 text-primary" /> Interrupciones del Día
+                </CardTitle>
+                <span className="text-[10px] text-muted-foreground font-mono">{totalLoggedMin}m en total</span>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="divide-y divide-border/50">
+                  {logs.map(entry => (
+                    <div key={entry.id} className="flex items-center justify-between px-5 py-3 hover:bg-secondary/10 transition-colors">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {entry.type === "bug"     && <Bug className="w-3.5 h-3.5 text-destructive shrink-0" />}
+                        {entry.type === "meeting" && <Users className="w-3.5 h-3.5 text-primary shrink-0" />}
+                        {entry.type === "task"    && <ClipboardList className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+                        <p className="text-[11px] font-medium truncate">{entry.title}</p>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-[10px] font-mono text-primary font-bold">{entry.durationMin}m</span>
+                        <span className="text-[9px] text-muted-foreground">{entry.loggedAt}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>

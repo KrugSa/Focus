@@ -1,83 +1,119 @@
 "use client"
 
 import * as React from "react"
-import { MOCK_TASKS, Priority, Status } from "@/lib/mock-data"
+import { Task, Priority, Status } from "@/lib/mock-data"
+import { useJiraTasks } from "@/hooks/use-jira-tasks"
+import { useTodayTickets, MAX_TODAY } from "@/hooks/use-today-tickets"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { 
-  Filter, 
-  Search, 
-  MoreHorizontal, 
-  Clock, 
-  ArrowUpCircle, 
+import {
+  Filter,
+  Search,
+  ArrowUpCircle,
   Circle,
   CheckCircle2,
   XCircle,
-  LayoutGrid,
-  List
+  ExternalLink,
+  Pin,
+  PinOff,
 } from "lucide-react"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { cn } from "@/lib/utils"
 
-const statusIcons: Record<Status, React.ReactNode> = {
-  "Todo": <Circle className="w-4 h-4 text-muted-foreground" />,
-  "In Progress": <ArrowUpCircle className="w-4 h-4 text-primary animate-pulse" />,
-  "Done": <CheckCircle2 className="w-4 h-4 text-green-500" />,
-  "Blocked": <XCircle className="w-4 h-4 text-destructive" />,
+const STATUS_ORDER: Record<Status, number> = {
+  "In Progress": 0,
+  "Todo": 1,
+  "Blocked": 2,
+  "Done": 3,
+}
+
+const PRIORITY_ORDER: Record<Priority, number> = {
+  "Urgent": 0,
+  "High": 1,
+  "Medium": 2,
+  "Low": 3,
+}
+
+const statusConfig: Record<Status, { icon: React.ReactNode; color: string; bg: string }> = {
+  "In Progress": {
+    icon: <ArrowUpCircle className="w-3.5 h-3.5" />,
+    color: "text-primary",
+    bg: "bg-primary/10 border-primary/30",
+  },
+  "Todo": {
+    icon: <Circle className="w-3.5 h-3.5" />,
+    color: "text-muted-foreground",
+    bg: "bg-secondary/20 border-border/50",
+  },
+  "Blocked": {
+    icon: <XCircle className="w-3.5 h-3.5" />,
+    color: "text-destructive",
+    bg: "bg-destructive/10 border-destructive/30",
+  },
+  "Done": {
+    icon: <CheckCircle2 className="w-3.5 h-3.5" />,
+    color: "text-green-500",
+    bg: "bg-green-500/10 border-green-500/20",
+  },
+}
+
+const priorityVariant: Record<Priority, "destructive" | "default" | "secondary" | "outline"> = {
+  "Urgent": "destructive",
+  "High": "default",
+  "Medium": "secondary",
+  "Low": "outline",
+}
+
+function sortTasks(tasks: Task[]): Task[] {
+  return [...tasks].sort((a, b) => {
+    const statusDiff = STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
+    if (statusDiff !== 0) return statusDiff
+    return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
+  })
 }
 
 export default function TicketsPage() {
-  const [view, setView] = React.useState<'list' | 'kanban'>('list')
+  const { tasks, loading } = useJiraTasks()
+  const { addToday, removeToday, isToday, count, hydrated } = useTodayTickets()
   const [search, setSearch] = React.useState("")
 
-  const filteredTasks = MOCK_TASKS.filter(t => 
-    t.title.toLowerCase().includes(search.toLowerCase()) || 
-    t.ticketNumber?.toLowerCase().includes(search.toLowerCase())
+  const filteredTasks = sortTasks(
+    tasks.filter(t =>
+      t.title.toLowerCase().includes(search.toLowerCase()) ||
+      t.ticketNumber?.toLowerCase().includes(search.toLowerCase())
+    )
   )
+
+  const inProgressCount = tasks.filter(t => t.status === "In Progress").length
+  const isFull = count >= MAX_TODAY
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-headline font-bold tracking-tight">Unified Workspace</h1>
-          <p className="text-muted-foreground text-sm mt-1">Managing {MOCK_TASKS.length} active work items across all systems.</p>
+          <h1 className="text-3xl font-headline font-bold tracking-tight">Tickets</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            {loading
+              ? "Cargando tickets de Jira…"
+              : `${tasks.length} tickets · ${inProgressCount} en progreso`}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center bg-secondary/30 rounded-lg p-1 border border-border/50">
-            <Button 
-              variant={view === 'list' ? 'secondary' : 'ghost'} 
-              size="sm" 
-              className="h-8 w-8 p-0"
-              onClick={() => setView('list')}
-            >
-              <List className="w-4 h-4" />
-            </Button>
-            <Button 
-              variant={view === 'kanban' ? 'secondary' : 'ghost'} 
-              size="sm" 
-              className="h-8 w-8 p-0"
-              onClick={() => setView('kanban')}
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </Button>
+        {hydrated && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border/50 bg-card/20">
+            <Pin className="w-3.5 h-3.5 text-primary" />
+            <span className="text-xs font-semibold">
+              {count}/{MAX_TODAY} para hoy
+            </span>
+            {isFull && <Badge variant="destructive" className="text-[9px] h-4 px-1">Lleno</Badge>}
           </div>
-          <Button variant="default" className="h-9 bg-primary text-primary-foreground font-medium px-4">
-            Import Jira
-          </Button>
-        </div>
+        )}
       </header>
 
       <div className="flex items-center gap-4 bg-card/20 p-2 rounded-xl border border-border/50">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input 
-            placeholder="Filter by title, ticket number, or project..." 
+          <Input
+            placeholder="Filtrar por título o número de ticket…"
             className="pl-10 h-10 bg-transparent border-none focus-visible:ring-0 focus-visible:ring-offset-0"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -85,116 +121,106 @@ export default function TicketsPage() {
         </div>
         <Button variant="ghost" size="sm" className="gap-2 h-9 text-muted-foreground">
           <Filter className="w-4 h-4" />
-          Filters
+          Filtros
         </Button>
       </div>
 
-      {view === 'list' ? (
-        <div className="border border-border/50 rounded-xl overflow-hidden bg-card/40">
-          <div className="grid grid-cols-12 gap-4 px-6 py-3 border-b border-border/50 bg-secondary/20 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-            <div className="col-span-1">Ticket</div>
-            <div className="col-span-5">Task Description</div>
-            <div className="col-span-2">Project</div>
-            <div className="col-span-1">Status</div>
-            <div className="col-span-1">Priority</div>
-            <div className="col-span-1">Est</div>
-            <div className="col-span-1 text-right">Action</div>
-          </div>
-          <div className="divide-y divide-border/50">
-            {filteredTasks.map((task) => (
-              <div key={task.id} className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-secondary/10 transition-colors group cursor-pointer">
-                <div className="col-span-1 font-mono text-xs text-muted-foreground ticket-number">
-                  {task.ticketNumber || '-'}
-                </div>
-                <div className="col-span-5 flex items-center gap-3">
-                  <span className="text-sm font-medium">{task.title}</span>
-                  <div className="flex gap-1">
-                    {task.tags.map(tag => (
-                      <span key={tag} className="px-1.5 py-0.5 rounded-full bg-secondary/50 text-[9px] text-muted-foreground border border-border/50">{tag}</span>
-                    ))}
-                  </div>
-                </div>
-                <div className="col-span-2 text-xs text-muted-foreground">
-                  {task.project}
-                </div>
-                <div className="col-span-1 flex items-center gap-2">
-                  {statusIcons[task.status]}
-                  <span className="text-[11px] text-foreground/80">{task.status}</span>
-                </div>
-                <div className="col-span-1">
-                  <Badge 
-                    variant={task.priority === 'Urgent' ? 'destructive' : task.priority === 'High' ? 'default' : 'secondary'} 
-                    className="text-[9px] h-5 px-2"
+      {loading ? (
+        <div
+          className="grid gap-3"
+          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}
+        >
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div key={i} className="h-36 rounded-xl bg-card/40 border border-border/50 animate-pulse" />
+          ))}
+        </div>
+      ) : filteredTasks.length === 0 ? (
+        <div className="py-20 text-center text-muted-foreground text-sm">No se encontraron tickets.</div>
+      ) : (
+        <div
+          className="grid gap-3"
+          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}
+        >
+          {filteredTasks.map((task) => {
+            const cfg = statusConfig[task.status]
+            const pinned = isToday(task.id)
+            return (
+              <div
+                key={task.id}
+                className={cn(
+                  "group relative flex flex-col gap-2 p-3 rounded-xl border transition-all",
+                  pinned
+                    ? "border-primary/40 bg-primary/8 shadow-[0_0_10px_rgba(88,166,255,0.1)]"
+                    : `${cfg.bg} hover:scale-[1.02] hover:shadow-lg`
+                )}
+              >
+                {/* Pin indicator */}
+                {pinned && (
+                  <span className="absolute top-1.5 left-1.5 w-1.5 h-1.5 rounded-full bg-primary" />
+                )}
+
+                {/* Top row: ticket + priority */}
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[9px] text-muted-foreground pl-2">{task.ticketNumber}</span>
+                  <Badge
+                    variant={priorityVariant[task.priority]}
+                    className="text-[8px] h-4 px-1.5 leading-none"
                   >
                     {task.priority}
                   </Badge>
                 </div>
-                <div className="col-span-1 flex items-center gap-1.5 text-xs text-muted-foreground font-mono">
-                  <Clock className="w-3 h-3" />
-                  {task.estimatedHours}h
+
+                {/* Title */}
+                <p className="text-[11px] font-semibold leading-snug line-clamp-3 flex-1">
+                  {task.title}
+                </p>
+
+                {/* Bottom row: status + project */}
+                <div className="flex items-center justify-between pt-1 border-t border-border/20">
+                  <div className={`flex items-center gap-1 ${cfg.color}`}>
+                    {cfg.icon}
+                    <span className="text-[9px] font-medium">{task.status}</span>
+                  </div>
+                  <span className="text-[9px] text-muted-foreground truncate max-w-[50px]">{task.project}</span>
                 </div>
-                <div className="col-span-1 text-right">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem>View Details</DropdownMenuItem>
-                      <DropdownMenuItem>Update Status</DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive">Delete Task</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+
+                {/* Action row */}
+                <div className="flex items-center justify-between pt-0.5">
+                  <button
+                    onClick={() => pinned ? removeToday(task.id) : addToday(task.id)}
+                    disabled={!pinned && isFull}
+                    className={cn(
+                      "flex items-center gap-1 text-[9px] font-semibold px-2 py-0.5 rounded-full border transition-all",
+                      pinned
+                        ? "border-primary/40 text-primary hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40"
+                        : isFull
+                          ? "border-border/30 text-muted-foreground/40 cursor-not-allowed"
+                          : "border-border/50 text-muted-foreground hover:border-primary/40 hover:text-primary"
+                    )}
+                  >
+                    {pinned ? (
+                      <><PinOff className="w-2.5 h-2.5" /> Quitar</>
+                    ) : (
+                      <><Pin className="w-2.5 h-2.5" /> {isFull ? "Lleno" : "Al día"}</>
+                    )}
+                  </button>
+
+                  <a
+                    href={`https://payevo.atlassian.net/browse/${task.ticketNumber}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <ExternalLink className="w-3 h-3 text-muted-foreground hover:text-primary" />
+                  </a>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          {(['Todo', 'In Progress', 'Done', 'Blocked'] as Status[]).map((status) => (
-            <div key={status} className="space-y-4">
-              <div className="flex items-center justify-between px-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold tracking-tight">{status}</span>
-                  <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-                    {filteredTasks.filter(t => t.status === status).length}
-                  </Badge>
-                </div>
-                <Button variant="ghost" size="icon" className="h-6 w-6"><Plus className="w-3 h-3"/></Button>
-              </div>
-              <div className="space-y-3">
-                {filteredTasks.filter(t => t.status === status).map((task) => (
-                  <Card key={task.id} className="border-border/50 bg-card/40 hover:border-primary/50 transition-all group cursor-pointer shadow-sm">
-                    <CardContent className="p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                         <span className="text-[10px] font-mono text-muted-foreground ticket-number">{task.ticketNumber || 'TASK'}</span>
-                         <Badge 
-                          variant={task.priority === 'Urgent' ? 'destructive' : 'outline'} 
-                          className="text-[9px] h-4 px-1.5 border-none"
-                         >
-                          {task.priority}
-                         </Badge>
-                      </div>
-                      <h4 className="text-xs font-semibold leading-relaxed line-clamp-2">{task.title}</h4>
-                      <div className="flex items-center justify-between pt-2 border-t border-border/10">
-                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                          <Clock className="w-3 h-3" />
-                          {task.estimatedHours}h
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[9px] text-primary/80 font-medium">{task.project}</span>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
   )
 }
+
