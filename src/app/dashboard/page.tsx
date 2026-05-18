@@ -10,9 +10,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
+} from "@/components/ui/dialog"
+import {
   Play, Pause, RotateCcw, Clock, AlertTriangle,
   CheckCircle2, ArrowUpCircle, Circle, XCircle, ExternalLink,
-  PlusCircle, Plus, Bug, Users, ClipboardList, History, Layout, Pin
+  PlusCircle, Plus, Bug, Users, ClipboardList, History, Layout, Pin,
+  Trophy, Timer
 } from "lucide-react"
 import { Priority, Status } from "@/lib/mock-data"
 import { useJiraTasks } from "@/hooks/use-jira-tasks"
@@ -30,7 +34,20 @@ type LogEntry = {
   loggedAt: string
 }
 
+type CompletedTicket = {
+  id: string
+  ticketId: string
+  ticketNumber: string
+  title: string
+  project: string
+  priority: Priority
+  realDurationMin: number
+  loggedDurationMin: number
+  completedAt: string
+}
+
 const LOG_KEY = "focus-quick-log"
+const COMPLETED_KEY = "focus-completed-tickets"
 
 const priorityBadge: Record<Priority, string> = {
   Urgent: "bg-destructive/20 text-destructive border-destructive/30",
@@ -60,10 +77,17 @@ export default function FocusDashboard() {
   const [newType, setNewType] = React.useState<"bug" | "meeting" | "task">("task")
   const [newDuration, setNewDuration] = React.useState("30")
 
+  // Completed tickets state
+  const [completed, setCompleted] = React.useState<CompletedTicket[]>([])
+  const [completeDialog, setCompleteDialog] = React.useState<{ taskId: string } | null>(null)
+  const [loggedMin, setLoggedMin] = React.useState("60")
+
   React.useEffect(() => {
     try {
       const stored = localStorage.getItem(LOG_KEY)
       if (stored) setLogs(JSON.parse(stored))
+      const storedCompleted = localStorage.getItem(COMPLETED_KEY)
+      if (storedCompleted) setCompleted(JSON.parse(storedCompleted))
     } catch {}
   }, [])
 
@@ -112,6 +136,44 @@ export default function FocusDashboard() {
 
   const todayTasks = jiraTasks.filter(t => todayIds.includes(t.id))
   const activeTask = todayTasks.find(t => t.id === activeTicketId)
+
+  const handleOpenComplete = (taskId: string) => {
+    const realMin = Math.round(chronoSec / 60)
+    const suggested = realMin < 60 ? "60" : String(realMin)
+    setLoggedMin(suggested)
+    setCompleteDialog({ taskId })
+    setIsRunning(false)
+  }
+
+  const handleConfirmComplete = () => {
+    if (!completeDialog) return
+    const task = todayTasks.find(t => t.id === completeDialog.taskId)
+    if (!task) return
+    const realMin = Math.round(chronoSec / 60)
+    const logged = parseInt(loggedMin) || 0
+    const entry: CompletedTicket = {
+      id: Math.random().toString(36).slice(2),
+      ticketId: task.id,
+      ticketNumber: task.ticketNumber ?? "",
+      title: task.title,
+      project: task.project,
+      priority: task.priority,
+      realDurationMin: realMin,
+      loggedDurationMin: logged,
+      completedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    }
+    const updated = [entry, ...completed]
+    setCompleted(updated)
+    localStorage.setItem(COMPLETED_KEY, JSON.stringify(updated))
+    setDailySec(s => s + logged * 60)
+    removeToday(task.id)
+    if (activeTicketId === task.id) {
+      setActiveTicketId("")
+      setChronoSec(0)
+    }
+    setCompleteDialog(null)
+  }
+
   const dailyPct = Math.min((dailySec / DAILY_LIMIT) * 100, 100)
   const isOver = dailySec >= DAILY_LIMIT
 
@@ -211,7 +273,7 @@ export default function FocusDashboard() {
 
       {/* Tabs: Tickets del día / Quick Entry / Time Logs */}
       <Tabs defaultValue="focus" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 bg-card border border-border/50 p-1 h-11">
+        <TabsList className="grid w-full grid-cols-4 bg-card border border-border/50 p-1 h-11">
           <TabsTrigger value="focus" className="gap-1.5 text-xs data-[state=active]:bg-secondary">
             <Layout className="w-3.5 h-3.5" /> Tickets del Día
             <Badge variant="secondary" className="ml-1 text-[9px] h-4 px-1">{todayIds.length}/{MAX_TODAY}</Badge>
@@ -222,6 +284,10 @@ export default function FocusDashboard() {
           <TabsTrigger value="logs" className="gap-1.5 text-xs data-[state=active]:bg-secondary">
             <History className="w-3.5 h-3.5" /> Registro
             {logs.length > 0 && <Badge variant="outline" className="ml-1 text-[9px] h-4 px-1">{logs.length}</Badge>}
+          </TabsTrigger>
+          <TabsTrigger value="completed" className="gap-1.5 text-xs data-[state=active]:bg-secondary">
+            <Trophy className="w-3.5 h-3.5" /> Completados
+            {completed.length > 0 && <Badge variant="outline" className="ml-1 text-[9px] h-4 px-1 border-green-500/40 text-green-400">{completed.length}</Badge>}
           </TabsTrigger>
         </TabsList>
 
@@ -294,6 +360,13 @@ export default function FocusDashboard() {
                         className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive text-[9px]"
                         title="Quitar del día"
                       >✕</button>
+                      <button
+                        onClick={e => { e.stopPropagation(); handleOpenComplete(task.id) }}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-green-400"
+                        title="Marcar como completado"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                      </button>
                       <a
                         href={`https://payevo.atlassian.net/browse/${task.ticketNumber}`}
                         target="_blank" rel="noreferrer"
@@ -414,7 +487,114 @@ export default function FocusDashboard() {
             </Card>
           )}
         </TabsContent>
+
+        {/* --- Completados --- */}
+        <TabsContent value="completed" className="pt-4">
+          {completed.length === 0 ? (
+            <div className="py-14 text-center border border-dashed border-border/40 rounded-2xl space-y-2">
+              <span className="text-3xl">🏆</span>
+              <p className="text-sm font-semibold">Nada completado aún</p>
+              <p className="text-xs text-muted-foreground">Marca tickets como completados desde la pestaña <strong>Tickets del Día</strong>.</p>
+            </div>
+          ) : (
+            <Card className="border-border/50 bg-card">
+              <CardHeader className="pb-2 pt-4 px-5 flex flex-row items-center justify-between">
+                <CardTitle className="text-sm font-bold flex items-center gap-2">
+                  <Trophy className="w-4 h-4 text-green-400" /> Tickets Completados Hoy
+                </CardTitle>
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  {completed.reduce((a, c) => a + c.loggedDurationMin, 0)}m registrados
+                </span>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="divide-y divide-border/50">
+                  {completed.map(entry => (
+                    <div key={entry.id} className="flex items-center justify-between px-5 py-3 hover:bg-secondary/10 transition-colors">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-green-400 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium truncate">{entry.title}</p>
+                          <p className="text-[9px] text-muted-foreground font-mono">{entry.ticketNumber} · {entry.project}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 shrink-0">
+                        <div className="text-right">
+                          <p className="text-[10px] font-mono text-green-400 font-bold">{entry.loggedDurationMin}m</p>
+                          {entry.realDurationMin !== entry.loggedDurationMin && (
+                            <p className="text-[9px] text-muted-foreground flex items-center gap-0.5 justify-end">
+                              <Timer className="w-2.5 h-2.5" />{entry.realDurationMin}m real
+                            </p>
+                          )}
+                        </div>
+                        <span className="text-[9px] text-muted-foreground">{entry.completedAt}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
       </Tabs>
+
+      {/* --- Complete Ticket Dialog --- */}
+      {(() => {
+        const dialogTask = completeDialog ? todayTasks.find(t => t.id === completeDialog.taskId) : null
+        return (
+          <Dialog open={!!completeDialog} onOpenChange={open => !open && setCompleteDialog(null)}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="w-4 h-4 text-green-400" /> Completar Ticket
+                </DialogTitle>
+              </DialogHeader>
+              {dialogTask && (
+                <div className="space-y-4 py-1">
+                  <div className="rounded-lg bg-secondary/30 px-4 py-3 space-y-1">
+                    <p className="text-[9px] font-mono text-muted-foreground">{dialogTask.ticketNumber}</p>
+                    <p className="text-[12px] font-semibold leading-snug">{dialogTask.title}</p>
+                  </div>
+                  {chronoSec > 0 && (
+                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                      <Timer className="w-3.5 h-3.5" />
+                      Tiempo real en cronómetro: <span className="font-mono text-foreground font-semibold">{Math.round(chronoSec / 60)}m</span>
+                    </div>
+                  )}
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">
+                      Tiempo a registrar (minutos)
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="number"
+                        value={loggedMin}
+                        onChange={e => setLoggedMin(e.target.value)}
+                        className="w-20 bg-secondary/20 border-border h-9"
+                      />
+                      <div className="flex flex-1 gap-1">
+                        {["30", "60", "90", "120"].map(min => (
+                          <Button
+                            key={min} type="button" variant="secondary" size="sm"
+                            className={cn("flex-1 text-[10px] border border-border bg-card h-9", loggedMin === min && "bg-primary text-primary-foreground border-primary")}
+                            onClick={() => setLoggedMin(min)}
+                          >{min}m</Button>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-[9px] text-muted-foreground">Puedes registrar más tiempo del que tardaste realmente.</p>
+                  </div>
+                </div>
+              )}
+              <DialogFooter className="gap-2">
+                <Button variant="outline" size="sm" onClick={() => setCompleteDialog(null)}>Cancelar</Button>
+                <Button size="sm" className="gap-1.5 bg-green-600 hover:bg-green-500 text-white" onClick={handleConfirmComplete}>
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Confirmar
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )
+      })()}
     </div>
   )
 }

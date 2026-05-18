@@ -76,11 +76,23 @@ export default function TicketsPage() {
   const { tasks, loading } = useJiraTasks()
   const { addToday, removeToday, isToday, count, hydrated } = useTodayTickets()
   const [search, setSearch] = React.useState("")
+  const [completedIds, setCompletedIds] = React.useState<string[]>([])
+
+  React.useEffect(() => {
+    try {
+      const stored = localStorage.getItem("focus-completed-tickets")
+      if (stored) {
+        const parsed = JSON.parse(stored) as { ticketId: string }[]
+        setCompletedIds(parsed.map(e => e.ticketId))
+      }
+    } catch {}
+  }, [])
 
   const filteredTasks = sortTasks(
     tasks.filter(t =>
-      t.title.toLowerCase().includes(search.toLowerCase()) ||
-      t.ticketNumber?.toLowerCase().includes(search.toLowerCase())
+      !completedIds.includes(t.id) &&
+      (t.title.toLowerCase().includes(search.toLowerCase()) ||
+      t.ticketNumber?.toLowerCase().includes(search.toLowerCase()))
     )
   )
 
