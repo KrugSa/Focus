@@ -10,7 +10,7 @@ export function useTodayTickets() {
 
   React.useEffect(() => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY)
+      const stored = sessionStorage.getItem(STORAGE_KEY)
       if (stored) setTodayIds(JSON.parse(stored))
     } catch {}
     setHydrated(true)
@@ -18,7 +18,7 @@ export function useTodayTickets() {
 
   const save = (ids: string[]) => {
     setTodayIds(ids)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(ids))
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(ids))
   }
 
   const addToday = (id: string) => {

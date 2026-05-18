@@ -80,7 +80,7 @@ export default function TicketsPage() {
 
   React.useEffect(() => {
     try {
-      const stored = localStorage.getItem("focus-completed-tickets")
+      const stored = sessionStorage.getItem("focus-completed-tickets")
       if (stored) {
         const parsed = JSON.parse(stored) as { ticketId: string }[]
         setCompletedIds(parsed.map(e => e.ticketId))

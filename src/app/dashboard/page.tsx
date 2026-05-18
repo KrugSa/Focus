@@ -48,6 +48,7 @@ type CompletedTicket = {
 
 const LOG_KEY = "focus-quick-log"
 const COMPLETED_KEY = "focus-completed-tickets"
+const TIMER_KEY = "focus-ticket-timers"
 
 const priorityBadge: Record<Priority, string> = {
   Urgent: "bg-destructive/20 text-destructive border-destructive/30",
@@ -71,6 +72,10 @@ export default function FocusDashboard() {
   const [chronoSec, setChronoSec] = React.useState(0)
   const [dailySec, setDailySec] = React.useState(0)
 
+  // Per-ticket saved times — ref for sync reads, state for card badges
+  const ticketTimersRef = React.useRef<Record<string, number>>({})
+  const [ticketTimers, setTicketTimers] = React.useState<Record<string, number>>({})
+
   // Quick entry state
   const [logs, setLogs] = React.useState<LogEntry[]>([])
   const [newTitle, setNewTitle] = React.useState("")
@@ -84,28 +89,44 @@ export default function FocusDashboard() {
 
   React.useEffect(() => {
     try {
-      const stored = localStorage.getItem(LOG_KEY)
+      const stored = sessionStorage.getItem(LOG_KEY)
       if (stored) setLogs(JSON.parse(stored))
-      const storedCompleted = localStorage.getItem(COMPLETED_KEY)
+      const storedCompleted = sessionStorage.getItem(COMPLETED_KEY)
       if (storedCompleted) setCompleted(JSON.parse(storedCompleted))
+      const storedTimers = sessionStorage.getItem(TIMER_KEY)
+      if (storedTimers) {
+        const parsed = JSON.parse(storedTimers)
+        ticketTimersRef.current = parsed
+        setTicketTimers(parsed)
+      }
     } catch {}
   }, [])
 
   React.useEffect(() => {
     if (!hydrated || todayIds.length === 0) return
-    setActiveTicketId(prev => prev && todayIds.includes(prev) ? prev : todayIds[0])
+    setActiveTicketId(prev => {
+      const id = prev && todayIds.includes(prev) ? prev : todayIds[0]
+      setChronoSec(ticketTimersRef.current[id] ?? 0)
+      return id
+    })
   }, [hydrated, todayIds])
 
   React.useEffect(() => {
     let interval: NodeJS.Timeout
     if (isRunning) {
       interval = setInterval(() => {
-        setChronoSec(s => s + 1)
+        setChronoSec(s => {
+          const next = s + 1
+          ticketTimersRef.current = { ...ticketTimersRef.current, [activeTicketId]: next }
+          sessionStorage.setItem(TIMER_KEY, JSON.stringify(ticketTimersRef.current))
+          setTicketTimers({ ...ticketTimersRef.current })
+          return next
+        })
         setDailySec(s => s + 1)
       }, 1000)
     }
     return () => clearInterval(interval)
-  }, [isRunning])
+  }, [isRunning, activeTicketId])
 
   const fmt = (sec: number) => {
     const h = Math.floor(sec / 3600).toString().padStart(2, "0")
@@ -126,7 +147,7 @@ export default function FocusDashboard() {
     }
     const updated = [entry, ...logs]
     setLogs(updated)
-    localStorage.setItem(LOG_KEY, JSON.stringify(updated))
+    sessionStorage.setItem(LOG_KEY, JSON.stringify(updated))
     setDailySec(s => s + entry.durationMin * 60)
     setNewTitle("")
     setNewDuration("30")
@@ -143,6 +164,12 @@ export default function FocusDashboard() {
     setLoggedMin(suggested)
     setCompleteDialog({ taskId })
     setIsRunning(false)
+  }
+
+  const handleSwitchTicket = (newId: string) => {
+    setIsRunning(false)
+    setActiveTicketId(newId)
+    setChronoSec(ticketTimersRef.current[newId] ?? 0)
   }
 
   const handleConfirmComplete = () => {
@@ -164,9 +191,13 @@ export default function FocusDashboard() {
     }
     const updated = [entry, ...completed]
     setCompleted(updated)
-    localStorage.setItem(COMPLETED_KEY, JSON.stringify(updated))
+    sessionStorage.setItem(COMPLETED_KEY, JSON.stringify(updated))
     setDailySec(s => s + logged * 60)
     removeToday(task.id)
+    // Clear saved timer for this ticket
+    delete ticketTimersRef.current[task.id]
+    sessionStorage.setItem(TIMER_KEY, JSON.stringify(ticketTimersRef.current))
+    setTicketTimers({ ...ticketTimersRef.current })
     if (activeTicketId === task.id) {
       setActiveTicketId("")
       setChronoSec(0)
@@ -261,7 +292,15 @@ export default function FocusDashboard() {
                 size="icon"
                 variant="outline"
                 className="h-11 w-11"
-                onClick={() => { setIsRunning(false); setChronoSec(0) }}
+                onClick={() => {
+                  setIsRunning(false)
+                  setChronoSec(0)
+                  if (activeTicketId) {
+                    delete ticketTimersRef.current[activeTicketId]
+                    sessionStorage.setItem(TIMER_KEY, JSON.stringify(ticketTimersRef.current))
+                    setTicketTimers({ ...ticketTimersRef.current })
+                  }
+                }}
               >
                 <RotateCcw className="w-4 h-4" />
               </Button>
@@ -330,7 +369,7 @@ export default function FocusDashboard() {
               {todayTasks.map(task => (
                 <div
                   key={task.id}
-                  onClick={() => { setActiveTicketId(task.id); setIsRunning(false); setChronoSec(0) }}
+                  onClick={() => handleSwitchTicket(task.id)}
                   className={cn(
                     "group relative flex flex-col gap-2.5 p-4 rounded-xl border cursor-pointer transition-all hover:scale-[1.01]",
                     activeTicketId === task.id
@@ -343,9 +382,17 @@ export default function FocusDashboard() {
                   )}
                   <div className="flex items-center justify-between gap-1">
                     <span className="font-mono text-[9px] text-muted-foreground">{task.ticketNumber}</span>
-                    <span className={cn("text-[8px] px-1.5 py-0.5 rounded-full border font-semibold", priorityBadge[task.priority])}>
-                      {task.priority}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {(ticketTimers[task.id] ?? 0) > 0 && (
+                        <span className="flex items-center gap-0.5 text-[8px] font-mono text-primary/70">
+                          <Timer className="w-2.5 h-2.5" />
+                          {Math.floor((ticketTimers[task.id] ?? 0) / 60)}m
+                        </span>
+                      )}
+                      <span className={cn("text-[8px] px-1.5 py-0.5 rounded-full border font-semibold", priorityBadge[task.priority])}>
+                        {task.priority}
+                      </span>
+                    </div>
                   </div>
                   <p className="text-[12px] font-semibold leading-snug line-clamp-2 flex-1">{task.title}</p>
                   <div className="flex items-center justify-between pt-1 border-t border-border/20">
